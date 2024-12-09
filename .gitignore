@@ -12,3 +12,6 @@ dist/
 *.egg-info/
 
 start.sh
+reload_service.sh
+
+public/

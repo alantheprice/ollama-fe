@@ -1,14 +1,59 @@
-(function(){const buildUtils=(document)=>{const virtualProps=["onAttach","onUpdate"];const isObj=(val)=>typeof val=="object"&&val!==null;const isFunc=(val)=>typeof val=="function";const handleChildren=(children,element,childElements)=>{children.forEach((child)=>{typeof child=="string"?element.appendChild(document.createTextNode(child)):isFunc(child)&&childElements.push(child(element))})};const attributeList="textContent|innerText|innerHTML|className|value|style|checked|selected|src|srcdoc|srcset|tabindex|target".split("|").reduce((result,attribute)=>(result[attribute]=1,result),{});const createElement=(namespace)=>(elementName)=>(attributes,children)=>{const eventListeners=[];let ref={};const element=document.createElementNS(namespace,elementName);const childElements=[];const update=(data)=>{if(attributes.onUpdate&&attributes.onUpdate(data,ref)===!1)return;childElements.forEach((child)=>{isFunc(child.update)&&child.update(data)})};const remove=()=>{eventListeners.forEach((remover)=>remover());element.remove();childElements.forEach((child)=>child.remove())};const setChildren=(newChildren)=>{childElements.forEach((child)=>child.remove());handleChildren(newChildren,element,childElements)};ref={current:element,update,setChildren,remove};Object.entries(attributes||{}).forEach((entry)=>{const[attributeName,attributeValue]=entry;if(attributeName=="style"&&isObj(attributeValue))Object.entries(attributeValue).forEach(([styleName,styleValue])=>{element.style[styleName]=styleValue});else if(!virtualProps.includes(attributeName)){if(attributeName=="ref"&&isObj(attributeValue))Object.assign(attributeValue,ref);else if(attributeName.indexOf("on")===0){const eventName=attributeName.slice(2).toLowerCase();element.addEventListener(eventName,attributeValue);eventListeners.push(()=>element.removeEventListener(eventName,attributeValue))}else attributeList[attributeName]||typeof attributeValue=="boolean"?element[attributeName]=attributeValue:element.setAttribute(attributeName,attributeValue)}});return(parent)=>{const parentNode=parent||document.body;parentNode.appendChild(element);children&&handleChildren(children,element,childElements);attributes.onAttach&&attributes.onAttach(ref);return ref}};return{create:createElement("http://www.w3.org/1999/xhtml"),createSvg:createElement("http://www.w3.org/2000/svg"),qs:(selector)=>document.querySelector(selector),qsAll:(selector)=>Array.from(document.querySelectorAll(selector))}};const utils=buildUtils(document);const elements="a|abbr|address|area|article|aside|audio|b|base|bdi|bdo|blockquote|body|br|button|canvas|caption|cite|code|col|colgroup|data|datalist|dd|del|details|dfn|div|dl|dt|em|embed|fieldset|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|head|header|hr|html|i|iframe|img|input|ins|kbd|label|legend|li|link|main|map|mark|meta|meter|nav|noscript|object|ol|optgroup|option|output|p|param|picture|pre|progress|q|ruby|rt|ruby|s|samp|script|section|select|small|source|span|strong|style|sub|summary|sup|table|tbody|td|template|textarea|tfoot|th|thead|time|title|tr|track|u|ul|var|video|wbr".split("|").reduce((agg,next)=>(agg[next]=utils.create(next),agg),{});const svgElements="svg|path|rect".split("|").reduce((agg,next)=>(agg[next]=utils.createSvg(next),agg),{});window.fmk={...utils,elements,svgElements}})();
+const getDB = async () => {
+    let _db = null;
+
+    const _getDB = async () => {
+        if (_db) {
+            return _db;
+        }
+        _db = await new Yexed('chats', 1, [
+            {
+                name: 'sessions',
+                options: { keyPath: 'id', autoIncrement: true },
+                indexes: [
+                    { name: 'title', keyPath: 'title', options: { unique: false } },
+                    { name: 'timestamp', keyPath: 'timestamp', options: { unique: false } }
+                ]
+            },
+            {
+                name: 'messages',
+                options: { keyPath: 'id', autoIncrement: true },
+                indexes: [
+                    { name: 'timestamp', keyPath: 'timestamp', options: { unique: false } },
+                    { name: 'session', keyPath: 'session', options: { unique: false } },
+                    { name: 'sender', keyPath: 'sender', options: { unique: false } }
+                ]
+            }
+        ]);
+        return _db;
+    };
+
+    return await _getDB();
+};
 
 
 const onload = () => {
+    const { div, option, button } = fmk.elements;
 
-    const chatBox = document.getElementById("chat-box");
-    const userInput = document.getElementById("user-input");
-    const sendButton = document.getElementById("send-button");
-    const toggleButton = document.getElementById("toggle-mode");
-    const modelSelect = document.getElementById("model-select");
-    const highlightTheme = document.getElementById("highlight-theme");
+    const chatBox = fmk.qs("#chat-box");
+    const userInput = fmk.qs("#user-input");
+    const sendButton = fmk.qs("#send-button");
+    const toggleButton = fmk.qs("#toggle-mode");
+    const modelSelect = fmk.qs("#model-select");
+    const highlightTheme = fmk.qs("#highlight-theme");
+    let currentSession = null;
+    
+    const saveMessage = async (message, sender) => {
+        const chat = {message, sender, session: null, timestamp: Date.now()};
+        const db = await getDB();
+        if (currentSession) {
+            chat.session = currentSession;
+        } else {
+            const title = message.length > 20 ? message.substring(0, 20) : message;
+            chat.session = await db.addData('sessions',  {'title': title, 'timestamp': Date.now()});
+            currentSession = chat.session;
+        }
+        await db.addData('messages', chat);
+    }
 
     toggleButton.addEventListener("click", () => {
         document.body.classList.toggle("light-mode");
@@ -23,7 +68,7 @@ const onload = () => {
     const placeholderMessage = "Processing your request...";
 
     let accumulatedMessage = "";
-    let firstMessageTime = Date.now();
+    let requestSentTime = Date.now();
     let selectedUserMessageIndex = -1;
     let userMessages = [];
     let Disconnected = true;
@@ -89,13 +134,14 @@ const onload = () => {
     async function initialize() {
         loadUserMessages();
         const models = await fetchModels();
-        const modelSelect = document.getElementById("model-select");
+
+        const modelSelect = fmk.qs("#model-select")
+
         models.forEach(model => {
-            const option = document.createElement("option");
-            console.log(model)
-            option.value = model.model;
-            option.textContent = model.model;
-            modelSelect.appendChild(option);
+            option({
+                value: model.model,
+                textContent: model.model
+            })(modelSelect);
         });
     }
 
@@ -111,6 +157,7 @@ const onload = () => {
         appendMessage("You", message);
         socket.send(data);
         userInput.value = "";
+        requestSentTime = Date.now();
         saveUserMessage(message);
         // Add a placeholder message from the bot
         appendMessage("Bot", placeholderMessage);
@@ -129,19 +176,17 @@ const onload = () => {
     }
 
     function appendMessage(sender, message) {
-        const messageElement = document.createElement("div");
-        messageElement.classList.add("message", sender.toLowerCase());
+        return div({
+            className: `message ${sender.toLowerCase()}`,
+            onAttach: (ref) => {
+                ref.current.innerHTML = md.render(message);
+                ref.current.querySelectorAll("pre code").forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+                chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the latest message
+            }
 
-        // Render Markdown for all messages
-        messageElement.innerHTML = md.render(message);
-        messageElement.querySelectorAll("pre code").forEach((block) => {
-            hljs.highlightElement(block);
-        });
-
-        chatBox.appendChild(messageElement);
-        chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the latest message
-
-        return messageElement;
+        })(chatBox);
     }
 
     function appendPartialMessage(sender, message) {
@@ -151,10 +196,9 @@ const onload = () => {
         }
 
         if (!lastMessageElement || lastMessageElement.classList.contains("you")) {
-            lastMessageElement = document.createElement("div");
-            lastMessageElement.classList.add("message", sender.toLowerCase());
-            chatBox.appendChild(lastMessageElement);
-            accumulatedMessage = ""; // Reset accumulated message
+            lastMessageElement = div({
+                className: `message ${sender.toLowerCase()}`,
+            })(chatBox).current;
         }
 
         // Accumulate the partial message content
@@ -168,7 +212,7 @@ const onload = () => {
 
     function finalizeMessage() {
         console.log("finalizing Message")
-        console.log("Time taken to complete message in seconds:", (Date.now() - firstMessageTime) / 1000);
+        console.log("Time taken to complete message in seconds:", (Date.now() - requestSentTime) / 1000);
         let lastMessageElement = chatBox.querySelector(".message.bot:last-child");
         if (lastMessageElement) {
             // Parse the entire accumulated message
@@ -177,10 +221,11 @@ const onload = () => {
                 hljs.highlightElement(block);
             });
         }
+        // TODO: Before we reset, save the message to the user's chat history
         accumulatedMessage = ""; // Reset for next message
     }
 
-    
+
     function saveThemePreference() {
         const theme = document.body.classList.contains("light-mode") ? "light" : "dark";
         localStorage.setItem("theme", theme);

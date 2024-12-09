@@ -34,22 +34,17 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"Error: {e}")
 
-def summarize_conversation(history):
-    # Implement a function to summarize the conversation history
-    # For simplicity, this example concatenates the last few messages
-    summary = " ".join([msg['content'] for msg in history[-10:]])
-    return summary
-
 async def generate_response(websocket: WebSocket, model: str, prompt: str):
     queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
     def sync_chat():
+        conversation_history[websocket].append({'role': 'user', 'content': prompt})
+        print(f"history: {conversation_history[websocket]}")
         # Summarize the conversation history
-        summary = summarize_conversation(conversation_history[websocket])
         response_generator = chat(
             model=model,
-            messages=[{'role': 'system', 'content': summary}, {'role': 'user', 'content': prompt}],  # Include the summary and prompt
+            messages=conversation_history[websocket],  # Include past responses
             stream=True,
         )
         for response in response_generator:
@@ -79,9 +74,9 @@ async def get_models():
     return models
 
 # Mount static files (CSS, JS, etc.)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/assets", StaticFiles(directory="public/assets"), name="assets")
 
 # Serve index.html for the root path
 @app.get("/")
 def read_root():
-    return FileResponse("static/index.html")
+    return FileResponse("public/index.html")
