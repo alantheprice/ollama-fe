@@ -1,6 +1,7 @@
 import { elements } from "./utils/framework";
 import {qs } from "./utils/utils";
 import "./style.css";
+import { saveMessage } from "./store/store";
 
 const { div,span, h1, select, textarea, option, button } = elements;
 
@@ -234,6 +235,7 @@ const onload = () => {
               hljs.highlightElement(block);
           });
       }
+      saveMessage(accumulatedMessage, 'bot');
       // TODO: Before we reset, save the message to the user's chat history
       accumulatedMessage = ""; // Reset for next message
   }
